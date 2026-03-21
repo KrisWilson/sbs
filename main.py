@@ -3,6 +3,7 @@ import socket
 import os
 import struct
 import threading
+from struct import unpack
 
 
 ## SMALL BOOT SERVER
@@ -56,6 +57,12 @@ class DHCP_packet:  # struktura zbudowana na podstawie RFC2131, zamieściłem wi
         print("SNAME \t", self.sname)
         print("FILE \t", self.file)
         print("OPTION \t", self.option)
+
+class pxe_client:   # array of clients to handle IP and specific configuration like booting IA32/ARM32 etc.
+    def __init__(self, data_in):
+        # 1 byte
+        self.mac = "010203040506"
+        self.platform = "IA32"
 
 
 client_ip = "192.168.2.2"
@@ -208,6 +215,75 @@ def dhcp_server(port_in=67, port_out=68):
         # print(f"Pozycja Magic Cookie: {reply.find(b'\x63\x82\x53\x63')}")
         sock.sendto(reply, broadcast_addr)
 
+
+# https://datatracker.ietf.org/doc/html/rfc1350 (kocham dokumentacje z lat 90)
+
+def handle_tftp_request(data, addr):
+    # OPCODES page 5 rfc1350
+    #   TFTP supports five types of packets, all of which have been mentioned
+    #   above:
+    #          opcode  operation
+    #            1     Read request (RRQ)
+    #            2     Write request (WRQ)
+    #            3     Data (DATA)
+    #            4     Acknowledgment (ACK)
+    #            5     Error (ERROR)
+    #   @Page 9 for TFTP formats and headers
+    #   @Page 10 for error codes
+    opcode = data[0] << 8 | data[1]
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(5)
+    if opcode == 1:    # Read request (RRQ)
+        packetsize = 512
+        # \x00 \x01 filename   \x00 octet \x00 tsize \x00 0 \x00
+        # \x00 \x01 pxelinux.0 \x00 octet \x00 tsize \x00 0 \x00'
+        req = data.split(b'\x00')
+        #print(req)
+        #if req[3] == b'blksize': packetsize = int(req[4],16)
+        filename = req[1][1:]
+        print(f"Received TFTP request for file '{filename}' from {addr}")
+        with open("./pxe_folder/debian_net/".encode() + filename, 'rb') as f:
+            i = int(1) #number of block
+            while True:
+                # page 9 - byte 0 | byte 3 | block numer | data (4096) - trzeba dopełnić do pełnego formatu
+                data = f.read(packetsize)
+                packet = b'\x00\x03' + bytes([int(i/256)]) + bytes([i%256]) + data
+                exit_req = 0
+                for retry in range(3):
+                    sock.sendto(packet, addr)
+                    print("[TFTP] Sending " + str(filename) + " => " + str(int(i/256)) + " " + str(int(i%256)) + " packet -> DATA")
+                    try:
+                        ack_data, ack_addr = sock.recvfrom(1024)
+                        ack_opcode, ack_block = struct.unpack("!HH", ack_data[:4])
+                        if ack_opcode == 4 and ack_block == i:
+                            break
+                        else:
+                            print("[TFTP] Error accepted, closing this connect << " + str(ack_opcode))
+                            exit_req = 1
+                    except socket.timeout:
+                        print("Timeout")
+                else:
+                    print("[TFTP] Timeout x3 interrupting")
+                    break;
+                if exit_req:
+                    print("[TFTP] Sending has been interrupted")
+                    break;
+                if len(data)<packetsize: #jeżeli dane nie wypełniły pełnego bloku to oznacza że nie ma co czytać już
+                    f.close()
+                    print("[TFTP] " + str(filename) + " has been sent in " + str(i) + " blocks")
+                    break
+                i = i+1 #????
+    elif opcode == 2:  # Write request
+        print("That doesnt make sense? write request from pxe boot handler?")
+    elif opcode == 3:  # DATA
+        print("got DATA opcode")
+    elif opcode == 4:  # ACK
+        print("got ACK")
+    else:              # 5 == Error
+        print("Unsupported TFTP request opcode == " + opcode)
+
+
 def tftp_server(port=69):
     #2 TFTP - trivial file transfer protocol - client will be able to access files eg. kernel, bootloader
     print("[TFTP] Starting new server...")
@@ -217,7 +293,9 @@ def tftp_server(port=69):
     while True:
         #Receive the TFTP request from a client
         data, addr = sock.recvfrom(4096)
-        print(addr)
+        thread_sendfile = threading.Thread(target=handle_tftp_request(data, addr))
+        thread_sendfile.start()
+
 
 if __name__ == '__main__':
     thread_dhcp = threading.Thread(target=dhcp_server)
