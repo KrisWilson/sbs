@@ -18,6 +18,7 @@ Client can:
 Tested platforms: IA32 old intel celeron platform
 
 Get started: (root is needed to DHCP access packets for 0.0.0.0)
+(be aware of firewall at these ports 67 68 69)
 ```
 git clone https://github.com/KrisWilson/sbs
 sudo python3 main.py

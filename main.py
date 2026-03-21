@@ -1,6 +1,9 @@
+import asyncio
 import socket
 import os
 import struct
+import threading
+
 
 ## SMALL BOOT SERVER
 
@@ -61,6 +64,7 @@ server_tftp = server_ip
 
 
 def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFER"):
+
     # przyzwyczajenie z assemblera do małych komponentów aby używać capslocka
     OP = b'\x02'  # Boot Reply, client send 01
     HTYPE = bytes([packet.htype])  # ethernet type e.g. 1 = 10 mb/s ethernet @=>helpfuldoc
@@ -79,7 +83,7 @@ def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFE
 
     header = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + \
              CIADDR + YIADDR + SIADDR + GIADDR + CHADDR + \
-             (b'\x00' * 64) + (b'\x00' * 128)  # take all in
+             (b'\x00' * 64) + (b'\x00' * 128)  # sname (64B) + file (128B)
 
     magic_cookie = b'\x63\x82\x53\x63'  # dhcp is nightmare, there must be special cookie to difference between BOOTP and DHCP packets
 
@@ -125,9 +129,12 @@ def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFE
     # Options 3 - Router
     options += b'\x03\x04' + SIADDR
 
+    # Options 5 - Name server
+    options += b'\x05\x04' + socket.inet_aton(server_ip)
+
     # Option 6 - DNS (Domain Name Server)
     options += b'\x06\x04' + socket.inet_aton(server_ip)
-    # Option 11 - skipped
+    # Option 11 - skipped (for dns)
     # Option 12 - Hostname
     hostname = b"pxe-client"
     options += b'\x0c' + bytes([len(hostname)]) + hostname
@@ -136,19 +143,28 @@ def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFE
     domain = b"local"
     options += b'\x0f' + bytes([len(domain)]) + domain
 
-    # Option 43 - Vendor specific, PXE setup
-    pxe_op43 = b'\x06\x01\x02\xff'
-    options += b'\x2b' + bytes([len(pxe_op43)]) + pxe_op43
+    # Option 17 - Root path
+    path = b"/"
+    options += b'\x11' + bytes([len(path)]) + path
 
-    # Option 60 - Vendor ID
-    options += b'\x3c\x09PXEClient'
+    # Option 43 - Vendor specific, PXE setup @option 60
+    #pxe_op43 = b'\x06\x01\x02\xff'
+    #options += b'\x2b' + bytes([len(pxe_op43)]) + pxe_op43
 
-    # Option 66 - IP server for TFTP (resource server, option 11 dismissed)
-    options += b'\x42' + bytes([len(socket.inet_aton(server_tftp))]) + socket.inet_aton(server_tftp)
+    # Option 60 - Vendor ID - turn on to get proxyDHCP Request
+    #options += b'\x3c\x09PXEClient'
+
+    # Option 66 - IP server for TFTP
+    #options += b'\x42' + bytes([len(socket.inet_aton(server_tftp))]) + socket.inet_aton(server_tftp)
+    #options += b'\x42\x0B192.168.2.1'
+    server_tftp_text = b"192.168.2.1"
+    options += b'\x42' + bytes([len(server_tftp_text)]) + server_tftp_text
+
 
     # Option 67 - Filename for bootfile at TFTP server
-    boot_file = b"pxelinux.0"
-    options += b'\x43' + bytes([len(boot_file)]) + boot_file
+    #boot_file = b"pxelinux.0"
+    #options += b'\x43' + bytes([len(boot_file)]) + boot_file
+    options += b'\x43\x0apxelinux.0'
 
     # \255 ending for options and packet
     options += b'\xff'
@@ -167,7 +183,7 @@ def format_mac(mac_in: bytes, hwlen: int):
     return mac.replace("0x", "").upper()
 
 
-def dhcp_server(port_in: int, port_out: int):
+def dhcp_server(port_in=67, port_out=68):
     print("[DHCP] Starting new server...")
     # #1 DHCP - the client will get assigned an Address to communicate with it later
     # AF_INET - IPv4
@@ -183,24 +199,30 @@ def dhcp_server(port_in: int, port_out: int):
         raw_opts = packet_in.option  # take last part of packet to search for options '53' (DISCOVER/REQUEST)
         reply = ''  # in case of failure (DISCOVER|REQUEST) send empty packet
         mac_addr = format_mac(packet_in.chaddr, packet_in.hlen)
-        if b'\x35\x01\x01' in raw_opts:  # check for discover
+        if b'\x35\x01\x01' in raw_opts:    # check for discover
             print("[DHCP] Found DISCOVER \t-> OFFER \thw: " + mac_addr)
-            reply = create_dhcp_response(packet_in, "OFFER")
+            reply = create_dhcp_response(packet_in, client_ip, "OFFER")
         elif b'\x35\x01\x03' in raw_opts:  # check for request
             print("[DHCP] Found REQUEST  \t-> ACK  \thw: " + mac_addr)
-            reply = create_dhcp_response(packet_in, "ACK")
-        # print(f"Pozycja Cookie: {reply.find(b'\x63\x82\x53\x63')}")
+            reply = create_dhcp_response(packet_in, client_ip, "ACK")
+        # print(f"Pozycja Magic Cookie: {reply.find(b'\x63\x82\x53\x63')}")
         sock.sendto(reply, broadcast_addr)
 
+def tftp_server(port=69):
+    #2 TFTP - trivial file transfer protocol - client will be able to access files eg. kernel, bootloader
+    print("[TFTP] Starting new server...")
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.bind(("0.0.0.0", port))
+    print("[TFTP] Setup complete, now listening")
+    while True:
+        #Receive the TFTP request from a client
+        data, addr = sock.recvfrom(4096)
+        print(addr)
 
 if __name__ == '__main__':
-    dhcp_server(67, 68)
+    thread_dhcp = threading.Thread(target=dhcp_server)
+    thread_tftp = threading.Thread(target=tftp_server)
+    thread_dhcp.start()
+    thread_tftp.start()
 
-    #2 TFTP - trivial file transfer protocol - client will be able to access files eg. kernel, bootloader
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(('0.0.0.0', 69))
 
-#    while True:
-#        # Receive the TFTP request from a client
-#        data, addr = sock.recvfrom(4096)
-#        print(addr)
