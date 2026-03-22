@@ -4,21 +4,24 @@
 
 Created in mind of simplicity and zero-setup to boot over LAN some PXE
 
-Server can:
-> so far only do as DHCP for 1 client (its gonna change)
+Server can host:
+> DHCP & TFTP server - enough to boot over LAN
 
 Do some configs like:
-* Server IP
-* Client IP pool
+* Server DHCP IP, Server TFTP IP
+* Precise hostname, domain, boot-file, rootpath, timezone
+* Stick IP to specific MAC
+* Client IP subnetwork
+* boot folder per architecture
 
 Client can:
-> Exists and talk to DHCP without getting files to boot
+> Exists and talk to DHCP to get download's ticket from TFTP
 
-
-Tested platforms: IA32 old intel celeron platform
+Tested platforms: i686 old intel celeron platform with Debian and Grub
 
 Get started: (root is needed to DHCP access packets for 0.0.0.0)
 (be aware of firewall at these ports 67 68 69)
+(tshark/wireshark might be useful for diagnosing problems)
 ```
 git clone https://github.com/KrisWilson/sbs
 sudo python3 main.py
