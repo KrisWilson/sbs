@@ -82,10 +82,11 @@ folder_arch = {
     'i386': 'i386',
     'EFI IA32': 'ia32',
     'EFI x86-64': 'x86',
-    'EFI ARM64': 'arm64'
+    'EFI ARM64': 'arm64',
+    'none': 'i386'
 }
 file_arch = {
-    'i386': 'debian-net/pxelinux.0',
+    'i386': 'core.0',
     'EFI IA32': 'core.0',
     'EFI x86-64': 'core.0',
     'EFI ARM64': 'core.0'
@@ -99,7 +100,9 @@ offset_seconds = 3600  # Time offset for countries, here is +1 Hour
 server_ip = "192.168.2.1"  # your eth address to reach out (DHCP/TFTP)
 subnet_mask = b'\x01\x04\xff\xff\xff\x00'  #255.255.255.0
 server_tftp = server_ip.encode()  # server_ip as bytes
-
+# TODO: Better selecting Interface
+# sudo sysctl -w net.ipv4.conf.eth_old.rp_filter=0
+IFACE = "br0"
 
 # Funkja tworząca na podstawie już istniejącego pakietu od klienta, nową odpowiedź typu OFFER/ACK
 def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFER"):
@@ -224,10 +227,12 @@ def dhcp_server(port_in=67, port_out=68):
     # AF_INET - IPv4
     # SOCK_DGRAM - UDP form of communication
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, IFACE.encode())
     sock.bind(('0.0.0.0', port_in))  # DHCP clients send Discover, Request on port 67
     broadcast_addr = ('255.255.255.255', port_out)  # DHCP clients listen for Offer, ACK on port 68
-    print("[DHCP] Setup complete, now listening")
+    print("[DHCP] Setup complete, now listening at " + IFACE)
     while True:
         data, addr = sock.recvfrom(4096)  # retrieve packets from port 67
         packet_in = DHCP_packet(data)  # divide packet over custom class
@@ -266,6 +271,7 @@ def handle_tftp_request(data, addr):
     #   @Page 10 for error codes
     opcode = data[0] << 8 | data[1]
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, IFACE.encode())
     sock.settimeout(5)
     if opcode == 1:  # Read request (RRQ)
         packetsize = 1456
@@ -284,6 +290,8 @@ def handle_tftp_request(data, addr):
             path = root_path + 'i386' + "/" + filename
             size = 0
 
+        path.replace('//', '/')
+
         try:
             size = os.path.getsize(path)
         except FileNotFoundError:
@@ -295,14 +303,23 @@ def handle_tftp_request(data, addr):
 
         # OACK handler, PXE normalnie nie potrzebuje tego, ale widocznie
         if len(req) == 6 or len(req) == 8:
+            packet = b''
             if len(req) == 6:
-                sock.sendto(b'\x00\x06tsize\x00' + str(size).encode() + b'\x00', addr)
+                packet=b'\x00\x06tsize\x00' + str(size).encode() + b'\x00'
             #    sock.sendto(b'\x00\x06blksize\x00' + str(packetsize).encode() + b'\x00tsize\x00' + str(size).encode() + b'\x00', addr)
             elif len(req) == 8:
                 if req[6] == b'0':  # tyle zachodu bo GRUB puka zamist pobierać od razu >:((
-                    sock.sendto(b'\x00\x06blksize\x00' + req[4] + b'\x00tsize\x00' + str(size).encode() + b'\x00', addr)
+                    packet = b'\x00\x06blksize\x00' + req[4] + b'\x00tsize\x00' + str(size).encode() + b'\x00'
                 elif req[4]== b'0': # PXELinux też ma odchyły, nie ma standardu kolejności opcji dodawanych do pakietu
-                    sock.sendto(b'\x00\x06tsize\x00' + str(size).encode() + b'\x00blksize\x00' + req[6] + b'\x00', addr)
+                    packet = b'\x00\x06tsize\x00' + str(size).encode() + b'\x00blksize\x00' + req[6] + b'\x00'
+
+            #print (str(data) + " " + str(addr))
+            sock.sendto(packet, addr)
+            #print (str(packet) + " " + str(sock.getsockname()[1]))
+            #oack = struct.pack("!H", 6)  # Opcode 6
+            #oack += b"tsize\x00" + str(size).encode() + b"\x00"
+            #oack += b"blksize\x00" + b"1408\x00"
+            #print (str(oack))
             for retry in range(3):
                 try:
                     ack_data, ack_addr = sock.recvfrom(1024)
@@ -330,7 +347,7 @@ def handle_tftp_request(data, addr):
                 exit_req = 0
                 for retry in range(3):
                     sock.sendto(packet, addr)
-                    print("[TFTP] Sending " + str(filename)[2:-1] + " => " + str(int(i/256)) + "/" + str(int(i%256)) + " packet -> DATA")
+                    print("[TFTP] Sending " + filename + " => " + str(int(i/256)) + "/" + str(int(i%256)) + " packet -> DATA")
                     try:
                         ack_data, ack_addr = sock.recvfrom(1024)
                         ack_opcode, ack_block = struct.unpack("!HH", ack_data[:4])
@@ -369,21 +386,22 @@ def handle_tftp_request(data, addr):
 def tftp_server(port=69):
     #2 TFTP - trivial file transfer protocol - client will be able to access files eg. kernel, bootloader
     print("[TFTP] Starting new server...")
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.bind(("0.0.0.0", port))
+    tftp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    tftp_sock.bind(("0.0.0.0", port))
     print("[TFTP] Setup complete, now listening")
     while True:
         # Read and dispatch tftp get request
-        data, addr = sock.recvfrom(4096)
+        data, addr = tftp_sock.recvfrom(4096)
         #TODO: Popraw threading - tak aby tworzył kolejne instancje na kilka próśb
-   #    print(addr)
-        thread_sendfile = threading.Thread(target=handle_tftp_request(data, addr))
+        print(addr)
+        thread_sendfile = threading.Thread(target=handle_tftp_request, args=(data, addr), daemon=True)
         thread_sendfile.start()
 
 
 if __name__ == '__main__':
     if not exists(root_path):
         os.mkdir(root_path)
+
     thread_dhcp = threading.Thread(target=dhcp_server)
     thread_tftp = threading.Thread(target=tftp_server)
     thread_dhcp.start()
