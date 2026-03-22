@@ -52,6 +52,7 @@ class DHCP_packet:  # struktura zbudowana na podstawie RFC2131, zamieściłem wi
                 return "EFI ARM64"
 
     def print(self):
+        print("\033[0m")
         print("Length: " + str(self.length))
         print("Mess OP ", self.op)
         print("HTYPE \t", self.htype)
@@ -222,7 +223,7 @@ def format_mac(mac_in: bytes, hwlen: int):
 
 # Funkcja zajmująca się przydzielaniem adresów (tylko przydziela, nie zajmuje się leasingiem ani terminacją)
 def dhcp_server(port_in=67, port_out=68):
-    print("[DHCP] Starting new server...")
+    print("\033[43m[DHCP] Starting new server...\033[0m")
     # #1 DHCP - the client will get assigned an Address to communicate with it later
     # AF_INET - IPv4
     # SOCK_DGRAM - UDP form of communication
@@ -232,7 +233,7 @@ def dhcp_server(port_in=67, port_out=68):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, IFACE.encode())
     sock.bind(('0.0.0.0', port_in))  # DHCP clients send Discover, Request on port 67
     broadcast_addr = ('255.255.255.255', port_out)  # DHCP clients listen for Offer, ACK on port 68
-    print("[DHCP] Setup complete, now listening at " + IFACE)
+    print("\033[42m[DHCP] Setup complete, now listening at " + IFACE + "\033[0m")
     while True:
         data, addr = sock.recvfrom(4096)  # retrieve packets from port 67
         packet_in = DHCP_packet(data)  # divide packet over custom class
@@ -240,18 +241,22 @@ def dhcp_server(port_in=67, port_out=68):
         reply = ''  # in case of failure (DISCOVER|REQUEST) send empty packet
         mac_addr = format_mac(packet_in.chaddr, packet_in.hlen)
 
+        if len(clients_ip)==254:    #TODO: ogranicznik IP do 255 albo system zwolnienia dzierżawy
+            clients_ip.clear()      # troche agresywne podejście
+
+
         try:
             clients_ip[mac_addr]
         except KeyError:
             clients_ip[mac_addr] = client_prefixIP + str(len(clients_ip)+1) # TODO: ogranicznik IP do 255, albo system zwalniania IP dzierżawa
 
         if b'\x35\x01\x01' in raw_opts:  # check for discover
-            print(f"[DHCP] Found DISCOVER \t-> OFFER {packet_in.getArch()}\thw: " + mac_addr)
+            print(f"\033[43m[DHCP] Found DISCOVER \t-> OFFER {packet_in.getArch()}\thw: " + mac_addr + "\033[0m")
             reply = create_dhcp_response(packet_in, clients_ip[mac_addr], "OFFER")
         elif b'\x35\x01\x03' in raw_opts:  # check for request
-            print(f"[DHCP] Found REQUEST  \t-> ACK   {packet_in.getArch()}\thw: " + mac_addr)
+            print(f"\033[43m[DHCP] Found REQUEST  \t-> ACK   {packet_in.getArch()}\thw: " + mac_addr + "\033[0m")
             reply = create_dhcp_response(packet_in, clients_ip[mac_addr], "ACK")
-        # print(f"Pozycja Magic Cookie: {reply.find(b'\x63\x82\x53\x63')}")
+        # print(f"Pozycja Magic Cookie: {reply.find(b'\x63\x82\x53\x63')}" \033[0m)
         sock.sendto(reply, broadcast_addr)
 
 
@@ -295,12 +300,12 @@ def handle_tftp_request(data, addr):
         try:
             size = os.path.getsize(path)
         except FileNotFoundError:
-            print("[TFTP] File not found => " + path)
+            print("\033[91m[TFTP] File not found => " + path + "\033[0m")
             try:
                 path = path.split("/grub.cfg-")[0] + "grub.cfg"
                 size = os.path.getsize(path)
             except FileNotFoundError:
-                print("[TFTP] File not found => " + path)
+                print("\033[91m[TFTP] File not found => " + path + "\033[0m")
                 return
 
         if req[3] == b'blksize':        # Handshake odnośnie prędkości pobierania -> OACK
@@ -318,31 +323,31 @@ def handle_tftp_request(data, addr):
                 elif req[4]== b'0': # PXELinux też ma odchyły, nie ma standardu kolejności opcji dodawanych do pakietu
                     packet = b'\x00\x06tsize\x00' + str(size).encode() + b'\x00blksize\x00' + req[6] + b'\x00'
 
-            #print (str(data) + " " + str(addr))
+            #print (str(data) + " " + str(addr) + "\033[0m")
             sock.sendto(packet, addr)
-            #print (str(packet) + " " + str(sock.getsockname()[1]))
+            #print (str(packet) + " " + str(sock.getsockname()[1]) + "\033[0m")
             #oack = struct.pack("!H", 6)  # Opcode 6
             #oack += b"tsize\x00" + str(size).encode() + b"\x00"
             #oack += b"blksize\x00" + b"1408\x00"
-            #print (str(oack))
+            #print (str(oack) + "\033[0m")
             for retry in range(3):
                 try:
                     ack_data, ack_addr = sock.recvfrom(1024)
                     ack_opcode, ack_block = struct.unpack("!HH", ack_data[:4])
                     if ack_opcode == 4 and ack_block == 0:
-                    #    print("[TFTP] OACK accepted, lets go")
+                    #    print("[TFTP] OACK accepted, lets go" + "\033[0m")
                         break
                     else:
-                     #   print("[TFTP] Error accepted, closing this connect << " + str(ack_opcode) + " " + str(ack_block))
+                     #   print("[TFTP] Error accepted, closing this connect << " + str(ack_opcode) + " " + str(ack_block) + "\033[0m")
                         return
                 except socket.timeout:
-                     print("[TFTP] Client/OACK not responding " + str(retry + 1) + "/3 " + path)
+                     print("\033[95m[TFTP] Client/OACK not responding " + str(retry + 1) + "/3 " + path + "\033[0m")
             else:
                 sock.close()
-                print("[TFTP] Timeout x3 OACK")
+                print("\033[95m[TFTP] Timeout x3 OACK" + "\033[0m")
                 return
 
-        print(f"Received TFTP request for file '{path}' from {addr} in speed {packetsize}")
+        print(f"\033[93mReceived TFTP request for file '{path}' from {addr} in speed {packetsize}" + "\033[0m")
         with open(path, 'rb') as f:
             i = int(1)  #number of block
             while True:
@@ -352,53 +357,53 @@ def handle_tftp_request(data, addr):
                 exit_req = 0
                 for retry in range(3):
                     sock.sendto(packet, addr)
-                    print("[TFTP] Sending " + filename + " => " + str(int(i/256)) + "/" + str(int(i%256)) + " packet -> DATA")
+                    #print("[TFTP] Sending " + filename + " => " + str(int(i/256)) + "/" + str(int(i%256)) + " packet -> DATA" + "\033[0m")
                     try:
                         ack_data, ack_addr = sock.recvfrom(1024)
                         ack_opcode, ack_block = struct.unpack("!HH", ack_data[:4])
                         if ack_opcode == 4 and ack_block == i:
                             break
                         else:
-                            print("[TFTP] Error accepted, closing this connect << " + str(ack_opcode) + " " + str(
-                                ack_block))
+                            print("\033[92m[TFTP] Error accepted, closing this connect << " + str(ack_opcode) + " " + str(
+                                ack_block) + "\033[0m")
                             exit_req = 1
                             break
                     except socket.timeout:
-                        print("[TFTP] " + str(retry + 1) + "/3")
+                        print("\033[95m[TFTP] " + str(retry + 1) + "/3" + "\033[0m")
                 else:
-                    print("[TFTP] Timeout x3 interrupting")
+                    print("\033[95m[TFTP] Timeout x3 interrupting" + "\033[0m")
                     return
                 if exit_req:
-                    print("[TFTP] Sending has been interrupted")
+                    print("\033[95m[TFTP] Sending has been interrupted" + "\033[0m")
                     return
                 if len(data) < packetsize:  #jeżeli dane nie wypełniły pełnego bloku to oznacza że nie ma co czytać już
                     f.close()
-                    print("[TFTP] " + filename + " has been sent in " + str(i) + " blocks")
+                    print("\033[92m[TFTP] " + filename + " has been sent in " + str(i) + " blocks" + "\033[0m")
                     sock.close()
                     return
                 i = i + 1  #???? i++ to nie, ale i+=1 to tak
     elif opcode == 2:  # Write request #TODO: dodaj obsługę write request; zwróć jakiś ICMP czy coś
-        print("That doesnt make sense? write request from pxe boot handler?")
+        print("That doesnt make sense? write request from pxe boot handler?" + "\033[0m")
     elif opcode == 3:  # DATA   #TODO: ??? pakiet od klienta z danymi nie jest potrzebny
-        print("got DATA opcode")
+        print("got DATA opcode" + "\033[0m")
     elif opcode == 4:  # ACK    #TODO: ACK jest obsługiwany wewnątrz opcode 1
-        print("got ACK")
+        print("got ACK" + "\033[0m")
     else:  # 5 == Error #TODO: ayayay karamba
-        print("Unsupported TFTP request opcode == " + str(opcode))
+        print("Unsupported TFTP request opcode == " + str(opcode) + "\033[0m")
 
 
 # Funkcja zajmująca się przekierowaniem do pobierania danych
 def tftp_server(port=69):
     #2 TFTP - trivial file transfer protocol - client will be able to access files eg. kernel, bootloader
-    print("[TFTP] Starting new server...")
+    print("\033[43m[TFTP] Starting new server..." + "\033[0m")
     tftp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     tftp_sock.bind(("0.0.0.0", port))
-    print("[TFTP] Setup complete, now listening")
+    print("\033[42m[TFTP] Setup complete, now listening" + "\033[0m")
     while True:
         # Read and dispatch tftp get request
         data, addr = tftp_sock.recvfrom(4096)
         #TODO: Popraw threading - tak aby tworzył kolejne instancje na kilka próśb
-        print(addr)
+        #print(str(addr) + "\033[0m")
         thread_sendfile = threading.Thread(target=handle_tftp_request, args=(data, addr), daemon=True)
         thread_sendfile.start()
 
