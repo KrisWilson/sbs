@@ -102,3 +102,17 @@ Field      DHCPDISCOVER          DHCPREQUEST           DHCPDECLINE,
            option; otherwise     option; otherwise
            unused                unused
 'options'  options               options               (unused)
+
+Kod (XXXXX),Nazwa architektury,Typ urządzenia / Tryb bootowania
+00000,Intel x86 PC,"Legacy BIOS (Twój Acer, większość starych PC)."
+00001,NEC/PC98,Japońskie standardy komputerów osobistych (archiwalne).
+00002,EFI Itanium,Serwerowe procesory Intel Itanium (IA-64).
+00003,DEC Alpha,Stare stacje robocze Alpha.
+00004,Arc x86,Rzadkie implementacje ARC na x86.
+00005,Intel Lean Client,Terminale i cienkie klienty Intela.
+00006,EFI IA32,"32-bitowe UEFI (wczesne tablety z Atomem, np. Asus T100)."
+00007,EFI x86-64,64-bitowe UEFI (standard w każdym nowym laptopie/PC).
+00008,EFI Xscale,Procesory bazujące na architekturze ARM (wczesne).
+00009,EFI x86-64 (HTTP),64-bitowe UEFI z obsługą bootowania przez HTTP.
+00010,EFI ARM64,"Współczesne laptopy ARM (np. Surface Pro X, Raspberry Pi 4/5)."
+00011,EFI BC,Alternatywny kod dla 64-bitowego UEFI (rzadko).
