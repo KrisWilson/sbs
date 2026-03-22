@@ -184,6 +184,8 @@ def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFE
     # Option 17 - Root path
     #options += b'\x11' + bytes([len('/')]) + b'/'
     platform_arch = packet.getArch()
+    if len(platform_arch)<2:
+        platform_arch = "none" # not all dhcp clients sends packets with arch
     options += b'\x11' + bytes([len(platform_arch.encode())]) + platform_arch.encode()
 
     # Option 43 - Vendor specific, PXE setup @option 60
@@ -302,10 +304,18 @@ def handle_tftp_request(data, addr):
         except FileNotFoundError:
             print("\033[91m[TFTP] File not found => " + path + "\033[0m")
             try:
-                path = path.split("/grub.cfg-")[0] + "grub.cfg"
-                size = os.path.getsize(path)
+                if len(path.split("/grub.cfg-"))!=1:
+                    path = path.split("/grub.cfg-")[0] + "grub.cfg"
+                    size = os.path.getsize(path)
+                else:
+                    print("\033[91m[TFTP] File not found => " + path + "\033[0m")
+                    sock.sendto(b'\x00\x05\x00\x01FileNotFound\x00',addr)
+                    sock.close()
+                    return
             except FileNotFoundError:
                 print("\033[91m[TFTP] File not found => " + path + "\033[0m")
+                sock.sendto(b'\x00\x05\x00\x01FileNotFound\x00',addr)
+                sock.close()
                 return
 
         if req[3] == b'blksize':        # Handshake odnośnie prędkości pobierania -> OACK
