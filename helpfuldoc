@@ -1,0 +1,104 @@
+ FIELD      OCTETS       DESCRIPTION
+   -----      ------       -----------
+
+   op            1  Message op code / message type.
+                    1 = BOOTREQUEST, 2 = BOOTREPLY
+   htype         1  Hardware address type, see ARP section in "Assigned
+                    Numbers" RFC; e.g., '1' = 10mb ethernet.
+   hlen          1  Hardware address length (e.g.  '6' for 10mb
+                    ethernet).
+   hops          1  Client sets to zero, optionally used by relay agents
+                    when booting via a relay agent.
+   xid           4  Transaction ID, a random number chosen by the
+                    client, used by the client and server to associate
+                    messages and responses between a client and a
+                    server.
+   secs          2  Filled in by client, seconds elapsed since client
+                    began address acquisition or renewal process.
+   flags         2  Flags (see figure 2).
+   ciaddr        4  Client IP address; only filled in if client is in
+                    BOUND, RENEW or REBINDING state and can respond
+                    to ARP requests.
+   yiaddr        4  'your' (client) IP address.
+   siaddr        4  IP address of next server to use in bootstrap;
+                    returned in DHCPOFFER, DHCPACK by server.
+   giaddr        4  Relay agent IP address, used in booting via a
+                    relay agent.
+   chaddr       16  Client hardware address.
+   sname        64  Optional server host name, null terminated string.
+   file        128  Boot file name, null terminated string; "generic"
+                    name or null in DHCPDISCOVER, fully qualified
+                    directory-path name in DHCPOFFER.
+   options     var  Optional parameters field.  See the options
+                    documents for a list of defined options.
+
+
+               Field      DHCPOFFER            DHCPACK             DHCPNAK
+-----      ---------            -------             -------
+'op'       BOOTREPLY            BOOTREPLY           BOOTREPLY
+'htype'    (From "Assigned Numbers" RFC)
+'hlen'     (Hardware address length in octets)
+'hops'     0                    0                   0
+'xid'      'xid' from client    'xid' from client   'xid' from client
+           DHCPDISCOVER         DHCPREQUEST         DHCPREQUEST
+           message              message             message
+'secs'     0                    0                   0
+'ciaddr'   0                    'ciaddr' from       0
+                                DHCPREQUEST or 0
+'yiaddr'   IP address offered   IP address          0
+           to client            assigned to client
+'siaddr'   IP address of next   IP address of next  0
+           bootstrap server     bootstrap server
+'flags'    'flags' from         'flags' from        'flags' from
+           client DHCPDISCOVER  client DHCPREQUEST  client DHCPREQUEST
+           message              message             message
+'giaddr'   'giaddr' from        'giaddr' from       'giaddr' from
+           client DHCPDISCOVER  client DHCPREQUEST  client DHCPREQUEST
+           message              message             message
+'chaddr'   'chaddr' from        'chaddr' from       'chaddr' from
+           client DHCPDISCOVER  client DHCPREQUEST  client DHCPREQUEST
+           message              message             message
+'sname'    Server host name     Server host name    (unused)
+           or options           or options
+'file'     Client boot file     Client boot file    (unused)
+           name or options      name or options
+'options'  options              options
+
+
+
+
+Field      DHCPDISCOVER          DHCPREQUEST           DHCPDECLINE,
+           DHCPINFORM                                  DHCPRELEASE
+-----      ------------          -----------           -----------
+'op'       BOOTREQUEST           BOOTREQUEST           BOOTREQUEST
+'htype'    (From "Assigned Numbers" RFC)
+'hlen'     (Hardware address length in octets)
+'hops'     0                     0                     0
+'xid'      selected by client    'xid' from server     selected by
+                                 DHCPOFFER message     client
+'secs'     0 or seconds since    0 or seconds since    0
+           DHCP process started  DHCP process started
+'flags'    Set 'BROADCAST'       Set 'BROADCAST'       0
+           flag if client        flag if client
+           requires broadcast    requires broadcast
+           reply                 reply
+'ciaddr'   0 (DHCPDISCOVER)      0 or client's         0 (DHCPDECLINE)
+           client's              network address       client's network
+           network address       (BOUND/RENEW/REBIND)  address
+           (DHCPINFORM)                                (DHCPRELEASE)
+'yiaddr'   0                     0                     0
+'siaddr'   0                     0                     0
+'giaddr'   0                     0                     0
+'chaddr'   client's hardware     client's hardware     client's hardware
+           address               address               address
+'sname'    options, if           options, if           (unused)
+           indicated in          indicated in
+           'sname/file'          'sname/file'
+           option; otherwise     option; otherwise
+           unused                unused
+'file'     options, if           options, if           (unused)
+           indicated in          indicated in
+           'sname/file'          'sname/file'
+           option; otherwise     option; otherwise
+           unused                unused
+'options'  options               options               (unused)
