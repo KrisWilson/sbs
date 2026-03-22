@@ -89,12 +89,12 @@ file_arch = {
     'i386': 'core.0',
     'EFI IA32': 'core.0',
     'EFI x86-64': 'core.0',
-    'EFI ARM64': 'core.0'
+    'EFI ARM64': 'core.0',
+    'none': 'core.0'
 }
-#client_ip   = "192.168.2.0"      # that's only placeholder - new client_ip
+
 client_name = b'pxe_client'  # Client's hostname
 domain_name = b'local'  # LAN domain
-#boot_file = b'core.0'  # first file to boot, this is only placeholder here
 root_path = "./pxe_folder/"  # root for pxe files
 offset_seconds = 3600  # Time offset for countries, here is +1 Hour
 server_ip = "192.168.2.1"  # your eth address to reach out (DHCP/TFTP)
@@ -296,7 +296,12 @@ def handle_tftp_request(data, addr):
             size = os.path.getsize(path)
         except FileNotFoundError:
             print("[TFTP] File not found => " + path)
-            return
+            try:
+                path = path.split("/grub.cfg-")[0] + "grub.cfg"
+                size = os.path.getsize(path)
+            except FileNotFoundError:
+                print("[TFTP] File not found => " + path)
+                return
 
         if req[3] == b'blksize':        # Handshake odnośnie prędkości pobierania -> OACK
             packetsize = int(req[4])

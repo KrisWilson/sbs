@@ -5,7 +5,7 @@
 Created in mind of simplicity and zero-setup to boot over LAN some PXE
 
 
-![Server-side image](https://github.com/KrisWilson/sbs/blob/master/client.png)
+![Showcase](https://github.com/KrisWilson/sbs/blob/master/showcase.gif)
 
 Server can host:
 > DHCP & TFTP server - enough to boot over LAN
