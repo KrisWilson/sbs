@@ -29,3 +29,6 @@ Get started: (root is needed to DHCP access packets for 0.0.0.0)
 git clone https://github.com/KrisWilson/sbs
 sudo python3 main.py
 ```
+
+Tested for i686:
+FreeDOS 1.2 [Lite/Full], Hiren's BootCD, Memtest, NT Offline Editor, PLPBT, Super Grub 2, Debian 

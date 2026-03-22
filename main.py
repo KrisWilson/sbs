@@ -310,16 +310,17 @@ def handle_tftp_request(data, addr):
 
         if req[3] == b'blksize':        # Handshake odnośnie prędkości pobierania -> OACK
             packetsize = int(req[4])
+        #elif req[5] == b'blksize':
+        #    packetsize = int(req[6])
 
         # OACK handler, PXE normalnie nie potrzebuje tego, ale widocznie
         if len(req) == 6 or len(req) == 8:
-            packet = b''
             if len(req) == 6:
                 packet=b'\x00\x06tsize\x00' + str(size).encode() + b'\x00'
             #    sock.sendto(b'\x00\x06blksize\x00' + str(packetsize).encode() + b'\x00tsize\x00' + str(size).encode() + b'\x00', addr)
             elif len(req) == 8:
                 if req[6] == b'0':  # tyle zachodu bo GRUB puka zamist pobierać od razu >:((
-                    packet = b'\x00\x06blksize\x00' + req[4] + b'\x00tsize\x00' + str(size).encode() + b'\x00'
+                    packet = b'\x00\x06blksize\x00' + req[4]+ b'\x00tsize\x00' + str(size).encode() + b'\x00'
                 elif req[4]== b'0': # PXELinux też ma odchyły, nie ma standardu kolejności opcji dodawanych do pakietu
                     packet = b'\x00\x06tsize\x00' + str(size).encode() + b'\x00blksize\x00' + req[6] + b'\x00'
 
@@ -353,7 +354,11 @@ def handle_tftp_request(data, addr):
             while True:
                 # page 9 - byte 0 | byte 3 | block numer | data
                 data = f.read(packetsize)
+                if i == 65536:
+                    i = 0
                 packet = b'\x00\x03' + bytes([int(i / 256)]) + bytes([i % 256]) + data
+                #block_number = i % 65536
+                #packet = struct.pack('!HH', 3, block_number) + data
                 exit_req = 0
                 for retry in range(3):
                     sock.sendto(packet, addr)
@@ -369,16 +374,16 @@ def handle_tftp_request(data, addr):
                             exit_req = 1
                             break
                     except socket.timeout:
-                        print("\033[95m[TFTP] " + str(retry + 1) + "/3" + "\033[0m")
+                        print("\033[95m[TFTP] " + str(retry + 1) + "/3 " + filename + "\033[0m")
                 else:
-                    print("\033[95m[TFTP] Timeout x3 interrupting" + "\033[0m")
+                    print("\033[95m[TFTP] Timeout x3 interrupting " + filename + "\033[0m")
                     return
                 if exit_req:
                     print("\033[95m[TFTP] Sending has been interrupted" + "\033[0m")
                     return
                 if len(data) < packetsize:  #jeżeli dane nie wypełniły pełnego bloku to oznacza że nie ma co czytać już
                     f.close()
-                    print("\033[92m[TFTP] " + filename + " has been sent in " + str(i) + " blocks" + "\033[0m")
+                    print("\033[92m[TFTP] " + filename + " has been sent" + "\033[0m")
                     sock.close()
                     return
                 i = i + 1  #???? i++ to nie, ale i+=1 to tak
@@ -403,7 +408,6 @@ def tftp_server(port=69):
         # Read and dispatch tftp get request
         data, addr = tftp_sock.recvfrom(4096)
         #TODO: Popraw threading - tak aby tworzył kolejne instancje na kilka próśb
-        #print(str(addr) + "\033[0m")
         thread_sendfile = threading.Thread(target=handle_tftp_request, args=(data, addr), daemon=True)
         thread_sendfile.start()
 
@@ -414,5 +418,6 @@ if __name__ == '__main__':
 
     thread_dhcp = threading.Thread(target=dhcp_server)
     thread_tftp = threading.Thread(target=tftp_server)
+    # TODO ICMP/DNS handlers
     thread_dhcp.start()
     thread_tftp.start()
