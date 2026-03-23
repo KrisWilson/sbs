@@ -4,7 +4,7 @@
 # What's gonna be your client's name and domain
 
 # sudo sysctl -w net.ipv4.conf.br0.rp_filter=0
-iface: "br0"                  # host interface for manage DHCP
+iface: "eth0"                 # host interface for manage DHCP
 root_path: "./pxe_example/"   # PXE root folder
 client_prefixIP: "192.168.2." # Client subnetwork <-- Same network as DHCP
 server_ip: "192.168.2.1"      # Server IP <- interface's address IP for host
