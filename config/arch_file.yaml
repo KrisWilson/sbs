@@ -1,0 +1,7 @@
+# the name of files for specific architecture to first boot
+default: "core.0"     # bios grub file
+none: "core.0"        # bios grub file
+i386: "core.0"        # bios grub file
+EFI-IA32: "core.0"    # => .efi
+EFI-x86-64: "core.0"  # => .efi
+EFI-ARM64: "core.0"   # => .efi

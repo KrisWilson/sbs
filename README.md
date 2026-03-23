@@ -31,4 +31,7 @@ sudo python3 main.py
 ```
 
 Tested for i686:
-FreeDOS 1.2 [Lite/Full], Hiren's BootCD, Memtest, NT Offline Editor, PLPBT, Super Grub 2, Debian 
+FreeDOS 1.2 [Lite/Full], Hiren's BootCD, Memtest, NT Offline Editor, PLPBT, Super Grub 2, Debian
+
+Third-party assets:
+Vimix theme from: https://github.com/vinceliuice/grub2-themes

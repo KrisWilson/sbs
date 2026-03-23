@@ -5,6 +5,9 @@ import threading
 import time
 from os.path import exists
 
+#pip install pyyaml
+import yaml
+
 
 ## SMALL BOOT SERVER
 
@@ -40,16 +43,17 @@ class DHCP_packet:  # struktura zbudowana na podstawie RFC2131, zamieściłem wi
         self.length = 4 + len(self.xid) + len(self.secs) + len(self.flags) + len(self.ciaddr) + len(self.yiaddr) + len(
             self.siaddr) + len(self.giaddr) + len(self.chaddr) + len(self.sname) + len(self.file) + len(self.option)
 
-    def getArch(self):  # @helpfuldoc line:106
+    def getarch(self):  # @helpfuldoc line:106
         if b'PXEClient:Arch' in self.option:
             if b'00000' in self.option:
                 return "i386"
             elif b'00006' in self.option:
-                return "EFI IA32"
+                return "EFI-IA32"
             elif b'00007' in self.option:
-                return "EFI x86-64"
+                return "EFI-x86-64"
             elif b'00010' in self.option:
-                return "EFI ARM64"
+                return "EFI-ARM64"
+        return "none"
 
     def print(self):
         print("\033[0m")
@@ -70,40 +74,39 @@ class DHCP_packet:  # struktura zbudowana na podstawie RFC2131, zamieściłem wi
         print("FILE \t", self.file)
         print("OPTION \t", self.option)
 
-client_prefixIP = "192.168.2."  # Client subnetwork
+cfg = {
+    #/config/server.yaml
+}
+
 clients_ip = {
-    'server': '192.168.2.1'
+    # => /config/reservedIP.yaml
+    'mac': 'ip'
 }  # Writing down the MAC <==> IP dependency
 
 ip_arch = {
     '192.168.2.1': 'amd64'
 }  # Writing down the IP  <==> Platform for booting
 
-folder_arch = {
-    'i386': 'i386',
-    'EFI IA32': 'ia32',
-    'EFI x86-64': 'x86',
-    'EFI ARM64': 'arm64',
-    'none': 'i386'
-}
 file_arch = {
-    'i386': 'core.0',
-    'EFI IA32': 'core.0',
-    'EFI x86-64': 'core.0',
-    'EFI ARM64': 'core.0',
-    'none': 'core.0'
+
 }
 
-client_name = b'pxe_client'  # Client's hostname
-domain_name = b'local'  # LAN domain
-root_path = "./pxe_folder/"  # root for pxe files
-offset_seconds = 3600  # Time offset for countries, here is +1 Hour
-server_ip = "192.168.2.1"  # your eth address to reach out (DHCP/TFTP)
-subnet_mask = b'\x01\x04\xff\xff\xff\x00'  #255.255.255.0
-server_tftp = server_ip.encode()  # server_ip as bytes
-# TODO: Better selecting Interface
-# sudo sysctl -w net.ipv4.conf.eth_old.rp_filter=0
-IFACE = "br0"
+folder_arch = {
+}
+
+def load_yaml(file_path):
+    with open(file_path, "r") as f:
+       yaml_file = yaml.safe_load(f)
+    return yaml_file
+
+def load_config(file_path="./config/server.yaml"):
+    with open(file_path, "r") as f:
+        config = yaml.safe_load(f)
+    config['client_name'] = config['client_name'].encode()
+    config['domain_name'] = config['domain_name'].encode()
+    config['server_tftp'] = config['server_tftp'].encode()
+    config['subnet_mask'] = b'\x01\x04' + socket.inet_aton(config['subnet_mask']) # 255.255.255.0 => \xff\xff\xff\x00
+    return config
 
 # Funkja tworząca na podstawie już istniejącego pakietu od klienta, nową odpowiedź typu OFFER/ACK
 def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFER"):
@@ -119,7 +122,7 @@ def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFE
     client_ip = clientip
     CIADDR = b'\x00\x00\x00\x00'  # client IP - server sets 0
     YIADDR = socket.inet_aton(client_ip)  # 'your ip' - ip for client
-    SIADDR = socket.inet_aton(server_ip)  # 'server ip' - server ip
+    SIADDR = socket.inet_aton(cfg['server_ip'])  # 'server ip' - server ip
     GIADDR = b'\x00\x00\x00\x00'  # Gateway IP - so far we can leave 0.0.0.0
     CHADDR = packet.chaddr  # selected hardware, the same as client (cuz we sending to client)
 
@@ -157,33 +160,33 @@ def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFE
     options = (b'\x35\x01' + msg_type_byte)
 
     # Option 54 - Server address (
-    options += b'\x36\x04' + socket.inet_aton(server_ip)
+    options += b'\x36\x04' + socket.inet_aton(cfg['server_ip'])
 
     # Option 1 - Subnet mask
-    options += subnet_mask
+    options += cfg['subnet_mask']
 
     # Option 2 - Time Offset
-    offset_bytes = struct.pack('>i', offset_seconds)
+    offset_bytes = struct.pack('>i', cfg['offset_seconds'])
     options += b'\x02\x04' + offset_bytes
 
     # Options 3 - Router
     options += b'\x03\x04' + SIADDR
 
     # Options 5 - Name server
-    options += b'\x05\x04' + socket.inet_aton(server_ip)
+    options += b'\x05\x04' + socket.inet_aton(cfg['server_ip'])
 
     # Option 6 - DNS (Domain Name Server)
-    options += b'\x06\x04' + socket.inet_aton(server_ip)
+    options += b'\x06\x04' + socket.inet_aton(cfg['server_ip'])
     # Option 11 - skipped (for dns)
     # Option 12 - Hostname
-    options += b'\x0c' + bytes([len(client_name)]) + client_name
+    options += b'\x0c' + bytes([len(cfg['client_name'])]) + cfg['client_name']
 
     # Option 15 - Domain name
-    options += b'\x0f' + bytes([len(domain_name)]) + domain_name
+    options += b'\x0f' + bytes([len(cfg['domain_name'])]) + cfg['domain_name']
 
     # Option 17 - Root path
     #options += b'\x11' + bytes([len('/')]) + b'/'
-    platform_arch = packet.getArch()
+    platform_arch = packet.getarch()
     if len(platform_arch)<2:
         platform_arch = "none" # not all dhcp clients sends packets with arch
     options += b'\x11' + bytes([len(platform_arch.encode())]) + platform_arch.encode()
@@ -196,10 +199,10 @@ def create_dhcp_response(packet: DHCP_packet, clientip: str, response_type="OFFE
     #options += b'\x3c\x09PXEClient'
 
     # Option 66 - IP server for TFTP
-    options += b'\x42' + bytes([len(server_tftp)]) + server_tftp
+    options += b'\x42' + bytes([len(cfg['server_tftp'])]) + cfg['server_tftp']
 
     # Option 67 - Filename for bootfile at TFTP server
-    boot_file = file_arch[packet.getArch()].encode()
+    boot_file = file_arch[packet.getarch()].encode()
     options += b'\x43' + bytes([len(boot_file)]) + boot_file
 
     # \255 ending for options and packet
@@ -232,10 +235,10 @@ def dhcp_server(port_in=67, port_out=68):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, IFACE.encode())
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, cfg['iface'].encode())
     sock.bind(('0.0.0.0', port_in))  # DHCP clients send Discover, Request on port 67
     broadcast_addr = ('255.255.255.255', port_out)  # DHCP clients listen for Offer, ACK on port 68
-    print("\033[42m[DHCP] Setup complete, now listening at " + IFACE + "\033[0m")
+    print("\033[42m[DHCP] Setup complete, now listening at " + cfg['iface'] + "\033[0m")
     while True:
         data, addr = sock.recvfrom(4096)  # retrieve packets from port 67
         packet_in = DHCP_packet(data)  # divide packet over custom class
@@ -250,17 +253,16 @@ def dhcp_server(port_in=67, port_out=68):
         try:
             clients_ip[mac_addr]
         except KeyError:
-            clients_ip[mac_addr] = client_prefixIP + str(len(clients_ip)+1) # TODO: ogranicznik IP do 255, albo system zwalniania IP dzierżawa
+            clients_ip[mac_addr] = cfg['client_prefixIP'] + str(len(clients_ip)+1) # TODO: ogranicznik IP do 255, albo system zwalniania IP dzierżawa
 
         if b'\x35\x01\x01' in raw_opts:  # check for discover
-            print(f"\033[43m[DHCP] Found DISCOVER \t-> OFFER {packet_in.getArch()}\thw: " + mac_addr + "\033[0m")
+            print(f"\033[43m[DHCP] Found DISCOVER \t-> OFFER {packet_in.getarch()}\thw: " + mac_addr + "\033[0m")
             reply = create_dhcp_response(packet_in, clients_ip[mac_addr], "OFFER")
         elif b'\x35\x01\x03' in raw_opts:  # check for request
-            print(f"\033[43m[DHCP] Found REQUEST  \t-> ACK   {packet_in.getArch()}\thw: " + mac_addr + "\033[0m")
+            print(f"\033[43m[DHCP] Found REQUEST  \t-> ACK   {packet_in.getarch()}\thw: " + mac_addr + "\033[0m")
             reply = create_dhcp_response(packet_in, clients_ip[mac_addr], "ACK")
         # print(f"Pozycja Magic Cookie: {reply.find(b'\x63\x82\x53\x63')}" \033[0m)
         sock.sendto(reply, broadcast_addr)
-
 
 # https://datatracker.ietf.org/doc/html/rfc1350 (kocham dokumentacje z lat 90)
 # Funkcja zajmująca się wysyłaniem danych, so far so good debiana zbootowała do instalki i głębiej
@@ -278,7 +280,7 @@ def handle_tftp_request(data, addr):
     #   @Page 10 for error codes
     opcode = data[0] << 8 | data[1]
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, IFACE.encode())
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, cfg['iface'].encode())
     sock.settimeout(5)
     if opcode == 1:  # Read request (RRQ)
         packetsize = 1456
@@ -291,10 +293,10 @@ def handle_tftp_request(data, addr):
         filename = str(filename).replace("b'", "").replace("'", "")
 
         try:
-            path = root_path + folder_arch[ ip_arch[addr[0]] ] + "/" + filename
+            path = cfg['root_path'] + folder_arch[ ip_arch[addr[0]] ] + "/" + filename
             size = 0
         except KeyError:
-            path = root_path + 'i386' + "/" + filename
+            path = cfg['root_path'] + 'i386' + "/" + filename
             size = 0
 
         path.replace('//', '/')
@@ -324,6 +326,7 @@ def handle_tftp_request(data, addr):
         #    packetsize = int(req[6])
 
         # OACK handler, PXE normalnie nie potrzebuje tego, ale widocznie
+        packet = b''
         if len(req) == 6 or len(req) == 8:
             if len(req) == 6:
                 packet=b'\x00\x06tsize\x00' + str(size).encode() + b'\x00'
@@ -417,14 +420,25 @@ def tftp_server(port=69):
     while True:
         # Read and dispatch tftp get request
         data, addr = tftp_sock.recvfrom(4096)
-        #TODO: Popraw threading - tak aby tworzył kolejne instancje na kilka próśb
         thread_sendfile = threading.Thread(target=handle_tftp_request, args=(data, addr), daemon=True)
         thread_sendfile.start()
 
 
 if __name__ == '__main__':
-    if not exists(root_path):
-        os.mkdir(root_path)
+    print(f"\033[93mLoading config file..." + "\033[0m")
+    cfg         = load_config()                          # default: ./config/server.yaml
+
+    print(f"\033[93mLoading config for Architecture boot files..." + "\033[0m")
+    file_arch   = load_yaml("./config/arch_file.yaml")   # default: ./config/arch_file.yaml
+
+    print(f"\033[93mLoading config for Architecture boot folders..." + "\033[0m")
+    folder_arch = load_yaml("./config/arch_folder.yaml") # defualt: ./config/arch_folder.yaml
+
+    print(f"\033[93mLoading config for reserved IP address..." + "\033[0m")
+    clients_ip  = load_yaml("./config/reservedIP.yaml")  # default: ./config/reservedIP.yaml
+
+    if not exists(cfg['root_path']):
+        os.mkdir(cfg['root_path'])
 
     thread_dhcp = threading.Thread(target=dhcp_server)
     thread_tftp = threading.Thread(target=tftp_server)

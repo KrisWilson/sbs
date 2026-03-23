@@ -1,0 +1,8 @@
+# pxe root folders for specific arch
+# eg. if client's architecture is i386 its gonna boot from root_path/i386/arch_file
+default: "x86"
+none: "x86"
+i386: "i386"
+EFI-IA32: "ia32"
+EFI-x86-64: "x86"
+EFI-ARM64: "arm64"
